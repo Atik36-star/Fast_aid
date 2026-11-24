@@ -1,8 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="csrf-token" content="<?php require_once __DIR__ . '/../includes/config.php'; require_once __DIR__ . '/../includes/csrf.php'; session_name(SESSION_NAME); session_start(); echo csrf_token(); ?>"><title>Tracking — FastAid</title><link rel="stylesheet" href="assets/css/style.css">
   <link rel="stylesheet" href="assets/css/legacy.css"><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script></head><body class="legacy-page tracking-page">
-<nav class="navbar" aria-label="Main"><div class="nav-inner"><a href="index.html" class="logo">Fast<span>Aid</span></a><button class="hamburger" onclick="toggleNav()" aria-label="Toggle" aria-expanded="false"><span></span><span></span><span></span></button><div class="nav-links" id="navLinks"><a href="index.html">Home</a><a href="tracking.html">Track</a><a href="request.html" class="nav-btn">New Request</a></div></div></nav>
+<nav class="navbar" aria-label="Main"><div class="nav-inner"><a href="index.html" class="logo">Fast<span>Aid</span></a><button class="hamburger" onclick="toggleNav()" aria-label="Toggle" aria-expanded="false"><span></span><span></span><span></span></button><div class="nav-links" id="navLinks"><a href="index.html">Home</a><a href="tracking.html" class="active">Track</a><a href="volunteer-dashboard.html" id="volNavLink" style="display:none;">Volunteer Dashboard</a><a href="terms.html">Terms</a><a href="request.html" class="nav-btn">New Request</a></div></div></nav>
 <main style="max-width:900px;margin:60px auto;padding:0 20px;" aria-label="Tracking">
+  <div id="volunteerBar" class="notice-banner" style="display:none;background:#eef6ff;border-left-color:#1d6fa5;margin-bottom:18px;">
+    <strong>Volunteer Tracking View:</strong> You are viewing live route & case progress. <a href="volunteer-dashboard.html" style="font-weight:600;text-decoration:underline;margin-left:8px;">← Return to Dashboard</a>
+  </div>
   <h2>Case Tracking — Bleeding</h2>
   <p style="color:var(--text-light);margin-bottom:16px;">Volunteer: Dr. James Park • 1.2 km away • ~3 min</p>
   <div id="map" class="map-container"></div>
@@ -10,14 +13,19 @@
   <section aria-label="Status timeline">
     <h3 style="font-weight:600;margin-bottom:10px;">Status</h3>
     <div class="status-timeline" id="timeline"></div>
+    <div id="volunteerControls" style="display:none;margin-top:14px;gap:8px;flex-wrap:wrap;">
+      <button type="button" class="btn btn-outline" onclick="setVolunteerStep('on_the_way')">Mark On the Way</button>
+      <button type="button" class="btn btn-outline" onclick="setVolunteerStep('arrived')">Mark Arrived</button>
+      <button type="button" class="btn btn-red" onclick="setVolunteerStep('completed')">Complete Case</button>
+    </div>
   </section>
 
   <section aria-label="Volunteer info" style="margin-top:24px;">
-    <div class="card"><div style="display:flex;align-items:center;gap:14px;"><div class="avatar avatar-md" style="background:#2a7a2a;">JP</div><div><div class="card-icon">&#9670;</div><h4>Dr. James Park</h4><p>EMT-B • 7 years • Verified</p></div></div></div>
+    <div class="card"><div style="display:flex;align-items:center;gap:14px;"><div class="avatar avatar-md" style="background:#2a7a2a;">JP</div><div><div class="card-icon">◆</div><h4>Dr. James Park</h4><p>EMT-B • 7 years • Verified</p></div></div></div>
   </section>
 
-  <section aria-label="Rating" style="margin-top:30px;" id="ratingSection" style="display:none;">
-    <div class="card-icon">&#9670;</div><h3>Rate Your Experience</h3>
+  <section aria-label="Rating" style="margin-top:30px;display:none;" id="ratingSection">
+    <div class="card-icon">◆</div><h3>Rate Your Experience</h3>
     <div class="card"><form onsubmit="submitRating(event)">
       <div style="display:flex;gap:8px;font-size:1.6rem;cursor:pointer;" aria-label="Star rating">
         <button type="button" onclick="pickStar(1)" aria-label="1 star">★</button><button type="button" onclick="pickStar(2)" aria-label="2 stars">★</button><button type="button" onclick="pickStar(3)" aria-label="3 stars">★</button><button type="button" onclick="pickStar(4)" aria-label="4 stars">★</button><button type="button" onclick="pickStar(5)" aria-label="5 stars">★</button>
@@ -31,12 +39,13 @@ function toggleNav(){const l=document.getElementById('navLinks');l.classList.tog
 let map;
 const params = new URLSearchParams(window.location.search);
 const currentRequestId = params.get('id') || 'r101';
+const isVolunteerView = params.get('role') === 'volunteer';
 let currentRating = 5;
 
 function initMap(){
   map=L.map('map').setView([40.7,-74.0],13);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OSM'}).addTo(map);
-  L.marker([40.7,-74.0]).addTo(map).bindPopup('You').openPopup();
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM'}).addTo(map);
+  L.marker([40.7,-74.0]).addTo(map).bindPopup('Patient').openPopup();
   L.marker([40.703,-74.01]).addTo(map).bindPopup('Volunteer');
 }
 
@@ -62,23 +71,32 @@ function updateTimeline(status) {
     cont.appendChild(d);
   });
 
-  if (status === 'completed') {
+  if (status === 'completed' && !isVolunteerView) {
     document.getElementById('ratingSection').style.display = 'block';
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  if (document.getElementById('map')) initMap();
-  updateTimeline('requested');
+function setVolunteerStep(nextStatus) {
+  updateTimeline(nextStatus);
+  showToast('Volunteer status updated: ' + nextStatus.replace('_', ' '), 'success');
+}
 
-  // Initial fetch
+document.addEventListener('DOMContentLoaded', () => {
+  if (isVolunteerView) {
+    document.getElementById('volunteerBar').style.display = 'block';
+    document.getElementById('volunteerControls').style.display = 'flex';
+    document.getElementById('volNavLink').style.display = 'inline-block';
+  }
+
+  if (document.getElementById('map')) initMap();
+  updateTimeline(isVolunteerView ? 'accepted' : 'requested');
+
   api.get_request_status({ id: currentRequestId }).then(r => {
     if (r.success && r.data.request) {
       updateTimeline(r.data.request.status);
     }
   });
 
-  // Subscribe to real-time Server-Sent Events (SSE)
   if (window.EventSource) {
     api.subscribeStream(currentRequestId, {
       onRequestUpdate: (req) => {
@@ -105,7 +123,7 @@ function submitRating(e){
   }).then(r => {
     if (r.success) {
       showToast('Thanks for your rating!', 'success');
-      document.getElementById('ratingSection').innerHTML = '<p style="color:#2a7a2a;font-weight:600;">✓ Rating submitted. Thank you!</p><a href="case-report.html?id=' + encodeURIComponent(currentRequestId) + '" target="_blank" class="btn btn-outline" style="margin-top:10px;display:inline-block;">📄 View / Print Official Case Report</a>';
+      document.getElementById('ratingSection').innerHTML = '<p style="color:#2a7a2a;font-weight:600;">✓ Rating submitted. Thank you!</p><a href="case-report.html?id=' + encodeURIComponent(currentRequestId) + '" target="_blank" class="btn btn-outline" style="margin-top:10px;display:inline-block;">View / Print Official Case Report</a>';
     } else {
       showToast(r.error || 'Rating failed', 'error');
     }
